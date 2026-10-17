@@ -8,35 +8,129 @@
 <link rel="icon" type="image/png" href="icon-180.png">
 <style>[hidden]{display:none!important} body{margin:0}</style>
 <script>
-/* GitHub Pages build: stands in for claude.ai storage. Saves to this browser (localStorage). */
+/* GitHub build: your data lives in one file, data.json, in the private repo trina-duchess/the-hours-data. */
 (function(){
-  const PFX='the-hours:';
+  const OWNER='trina-duchess', REPO='the-hours-data', FILE='data.json', BRANCH='main';
+  const API=`https://api.github.com/repos/${OWNER}/${REPO}`;
+  const TK='the-hours:gh-token';
+  const getTok=()=>{ try{ return localStorage.getItem(TK)||''; }catch(e){ return ''; } };
+  const setTok=t=>{ try{ t?localStorage.setItem(TK,t):localStorage.removeItem(TK); }catch(e){} };
+
+  let store={}, sha=null, pending=new Map(), saving=false, again=false, timer=null, readyResolve, ready=new Promise(r=>readyResolve=r);
   const subs=[];
-  const all=()=>{ const o={}; for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.startsWith(PFX)) o[k.slice(PFX.length)]=k; } return o; };
-  const read=p=>{ try{ const v=localStorage.getItem(PFX+p); return v==null?undefined:JSON.parse(v); }catch(e){ return undefined; } };
-  const docSnap=(p)=>{ const d=read(p); return {id:p.split('/').pop(), exists:d!==undefined, data:()=>d}; };
-  const colSnap=(c)=>{ const docs=Object.keys(all()).filter(p=>p.startsWith(c+'/')&&p.split('/').length===2).sort().map(docSnap); return {docs, size:docs.length, empty:!docs.length}; };
   const notify=()=>subs.forEach(s=>{ try{ s(); }catch(e){ console.warn(e); } });
-  window.addEventListener('storage',e=>{ if(!e.key||e.key.startsWith(PFX)) notify(); });
+  const clone=v=>v==null?v:JSON.parse(JSON.stringify(v));
+
+  /* status pill */
+  let pill;
+  function status(t,kind){
+    if(!pill){ pill=document.createElement('div'); pill.style.cssText='position:fixed;left:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 12px);z-index:80;font:12px system-ui,sans-serif;padding:5px 10px;border-radius:12px;background:#2a2520;color:#f6efe2;opacity:.85;pointer-events:none;transition:opacity .4s'; document.body.appendChild(pill); }
+    pill.textContent=t; pill.style.background=kind==='err'?'#b15a3c':'#2a2520'; pill.style.opacity=t?'.85':'0';
+  }
+  const headers=()=>({'Authorization':'Bearer '+getTok(),'Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'});
+  function b64enc(str){ const bytes=new TextEncoder().encode(str); let bin=''; for(let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode.apply(null,bytes.subarray(i,i+0x8000)); return btoa(bin); }
+  function b64dec(b){ const bin=atob(b.replace(/\s/g,'')); const bytes=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i); return new TextDecoder().decode(bytes); }
+
+  async function fetchRemote(){
+    const r=await fetch(`${API}/contents/${FILE}?ref=${BRANCH}&t=${Date.now()}`,{headers:headers(),cache:'no-store'});
+    if(r.status===404) return {data:{}, sha:null};
+    if(r.status===401) throw Object.assign(new Error('bad key'),{code:401});
+    if(!r.ok) throw new Error('load '+r.status);
+    const j=await r.json();
+    let text=j.content?b64dec(j.content):'';
+    if(!text && j.download_url){ const r2=await fetch(j.git_url,{headers:headers(),cache:'no-store'}); const j2=await r2.json(); text=b64dec(j2.content); }
+    return {data:text?JSON.parse(text):{}, sha:j.sha};
+  }
+  async function pushNow(){
+    if(saving){ again=true; return; }
+    if(!pending.size) return;
+    saving=true; status('Saving…');
+    const sent=new Map(pending);
+    try{
+      for(let attempt=0; attempt<4; attempt++){
+        const body={message:'Update The Hours data', branch:BRANCH, content:b64enc(JSON.stringify(store)), ...(sha?{sha}:{})};
+        const r=await fetch(`${API}/contents/${FILE}`,{method:'PUT',headers:{...headers(),'Content-Type':'application/json'},body:JSON.stringify(body)});
+        if(r.ok){ const j=await r.json(); sha=j.content.sha; break; }
+        if(r.status===409||r.status===422){ // someone else saved first: take theirs, put my changes on top, try again
+          const rem=await fetchRemote(); sha=rem.sha; store=rem.data; pending.forEach((v,k)=>{ if(v==null) delete store[k]; else store[k]=v; }); notify(); continue;
+        }
+        if(r.status===401){ status('GitHub key not accepted','err'); askKey('That key was turned down. Paste a new one.'); throw new Error('401'); }
+        throw new Error('save '+r.status);
+      }
+      sent.forEach((v,k)=>{ if(pending.get(k)===v) pending.delete(k); });
+      status(pending.size?'Saving…':'Saved'); if(!pending.size) setTimeout(()=>{ if(!pending.size&&!saving) status(''); },1500);
+    }catch(e){ console.warn(e); if(String(e.message)!=='401') status('Not saved yet. Will retry.','err'); setTimeout(()=>pushNow(),5000); }
+    finally{ saving=false; if(again||pending.size){ again=false; schedule(400); } }
+  }
+  function schedule(ms){ clearTimeout(timer); timer=setTimeout(pushNow, ms==null?700:ms); }
+  function write(p,v){ if(v==null) delete store[p]; else store[p]=clone(v); pending.set(p,v==null?null:clone(v)); notify(); status('Saving…'); schedule(); }
+
+  async function refresh(){
+    if(!getTok()||saving||pending.size) return;
+    try{ const rem=await fetchRemote(); if(rem.sha!==sha){ sha=rem.sha; store=rem.data; notify(); } }catch(e){}
+  }
+  document.addEventListener('visibilitychange',()=>{ if(document.visibilityState==='visible') refresh(); });
+  window.addEventListener('beforeunload',e=>{ if(pending.size||saving){ e.preventDefault(); e.returnValue=''; } });
+
+  async function start(){
+    status('Loading…');
+    try{ const rem=await fetchRemote(); store=rem.data; sha=rem.sha; status(''); readyResolve(); notify(); }
+    catch(e){ if(e.code===401){ status(''); askKey('That key was turned down. Paste a new one.'); } else { status('Couldn’t reach GitHub. Retrying…','err'); setTimeout(start,4000); } }
+  }
+
+  /* one-time key prompt */
+  function askKey(msg){
+    let ov=document.getElementById('gh-key'); if(ov) ov.remove();
+    ov=document.createElement('div'); ov.id='gh-key';
+    ov.style.cssText='position:fixed;inset:0;z-index:90;background:rgba(42,37,32,.55);display:flex;align-items:center;justify-content:center;padding:20px;font-family:system-ui,sans-serif';
+    ov.innerHTML=`<div style="background:#fffdf8;color:#2a2520;border-radius:12px;max-width:420px;width:100%;padding:22px;box-shadow:0 12px 30px rgba(0,0,0,.25)">
+      <div style="font:italic 26px Georgia,serif;color:#8a5e2e;margin-bottom:6px">The Hours</div>
+      <div style="font-size:14px;line-height:1.5;margin-bottom:12px">${msg||'Paste your GitHub key to open your data. You only do this once on each device.'}</div>
+      <input id="gh-key-in" type="password" autocomplete="off" placeholder="github_pat_…" style="width:100%;box-sizing:border-box;padding:10px;border:1px solid #c8b89e;border-radius:6px;font-size:15px">
+      <div id="gh-key-err" style="color:#b15a3c;font-size:13px;min-height:18px;margin-top:6px"></div>
+      <button id="gh-key-go" style="margin-top:6px;width:100%;padding:11px;border:none;border-radius:6px;background:#b8864a;color:#fffdf8;font-size:15px;cursor:pointer">Open my data</button></div>`;
+    document.body.appendChild(ov);
+    const go=async()=>{
+      const t=document.getElementById('gh-key-in').value.trim(), err=document.getElementById('gh-key-err');
+      if(!t){ err.textContent='Paste the key first.'; return; }
+      err.textContent='Checking…';
+      try{
+        const r=await fetch(API,{headers:{'Authorization':'Bearer '+t,'Accept':'application/vnd.github+json'},cache:'no-store'});
+        if(r.status===401){ err.textContent='GitHub didn’t accept that key.'; return; }
+        if(!r.ok){ err.textContent='That key can’t see the-hours-data. Check it has access to that repo.'; return; }
+      }catch(e){ err.textContent='Couldn’t reach GitHub. Check your connection.'; return; }
+      setTok(t); ov.remove(); start();
+    };
+    document.getElementById('gh-key-go').onclick=go;
+    document.getElementById('gh-key-in').onkeydown=e=>{ if(e.key==='Enter') go(); };
+  }
+
+  const docSnap=p=>{ const d=store[p]; return {id:p.split('/').pop(), exists:d!==undefined, data:()=>clone(d)}; };
+  const colSnap=c=>{ const docs=Object.keys(store).filter(p=>p.startsWith(c+'/')&&p.split('/').length===2).sort().map(docSnap); return {docs,size:docs.length,empty:!docs.length}; };
   const db={
     doc(p){ return {
-      async get(){ return docSnap(p); },
-      async set(d){ localStorage.setItem(PFX+p, JSON.stringify(d)); setTimeout(notify,0); },
-      async update(d){ localStorage.setItem(PFX+p, JSON.stringify({...(read(p)||{}),...d})); setTimeout(notify,0); },
-      async delete(){ localStorage.removeItem(PFX+p); setTimeout(notify,0); },
-      onSnapshot(cb){ const f=()=>cb(docSnap(p)); subs.push(f); setTimeout(f,0); return ()=>subs.splice(subs.indexOf(f),1); }
+      async get(){ await ready; return docSnap(p); },
+      async set(d){ write(p,d); },
+      async update(d){ write(p,{...(store[p]||{}),...d}); },
+      async delete(){ write(p,null); },
+      onSnapshot(cb){ const f=()=>cb(docSnap(p)); subs.push(f); ready.then(f); return ()=>subs.splice(subs.indexOf(f),1); }
     }; },
-    collection(c){ const q={
-      limit(){ return q; }, orderBy(){ return q; }, where(){ return q; },
-      async get(){ return colSnap(c); },
-      onSnapshot(cb){ const f=()=>cb(colSnap(c)); subs.push(f); setTimeout(f,0); return ()=>subs.splice(subs.indexOf(f),1); }
-    }; return q; }
+    collection(c){ const q={ limit(){return q;}, orderBy(){return q;}, where(){return q;},
+      async get(){ await ready; return colSnap(c); },
+      onSnapshot(cb){ const f=()=>cb(colSnap(c)); subs.push(f); ready.then(f); return ()=>subs.splice(subs.indexOf(f),1); } }; return q; }
   };
   const downloads={ async save({filename,data}){
     const blob=data instanceof Blob?data:new Blob([data],{type:/\.csv$/i.test(filename)?'text/csv':'application/json'});
     const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),4000);
   }};
   window.claude={ async use(n){ if(n==='db') return db; if(n==='downloads') return downloads; throw new Error('unavailable'); } };
+  window.theHoursChangeKey=()=>askKey('Paste a new GitHub key.');
+
+  document.addEventListener('DOMContentLoaded',()=>{
+    if(getTok()) start(); else askKey();
+    const row=document.querySelector('#panel-year .data-row');
+    if(row){ const b=document.createElement('button'); b.className='btn ghost btn-sm'; b.textContent='Change GitHub key'; b.onclick=()=>window.theHoursChangeKey(); row.appendChild(b); }
+  });
 })();
 </script>
 </head><body>
@@ -496,7 +590,7 @@
 
     <div class="card">
       <div class="card-h">Your data</div>
-      <div class="muted" style="margin:2px 0 12px;">Everything is saved on this device, in this browser. Download a backup now and then, and use it to move your data to another device. Download a backup, or export your tasks as a CSV to edit in Excel and import back.</div>
+      <div class="muted" style="margin:2px 0 12px;">Everything is saved to data.json in your private the-hours-data repo on GitHub, so every device sees the same data. Download a backup, or export your tasks as a CSV to edit in Excel and import back.</div>
       <div class="data-row">
         <button class="btn ghost btn-sm" id="export-btn">Export backup (JSON)</button>
         <button class="btn ghost btn-sm" id="export-csv-btn">Export tasks (CSV)</button>
@@ -1957,7 +2051,7 @@ document.addEventListener('click',e=>{
 render();
 (async()=>{
   try{ db = window.claude ? await window.claude.use('db') : null; }catch(e){}
-  if(!db){ loaded=true; document.getElementById('m-grid').innerHTML='<div class="empty" style="grid-column:1/-1;padding:20px;">Couldn’t open this browser’s storage.</div>'; return; }
+  if(!db){ loaded=true; document.getElementById('m-grid').innerHTML='<div class="empty" style="grid-column:1/-1;padding:20px;">Couldn’t open your data.</div>'; return; }
   db.collection('items').limit(1000).onSnapshot(s=>{ const n={}; s.docs.forEach(d=>n[d.id]=d.data()); items=n; loaded=true; render(); },
     ()=>{ loaded=true; render(); toast('Couldn’t load tasks.'); });
   db.collection('goals').onSnapshot(s=>{ const n={}; s.docs.forEach(d=>n[d.id]=d.data()); goals=n; render(); });
