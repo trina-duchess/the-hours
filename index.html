@@ -1428,7 +1428,7 @@ function monthItemModal(o){
     <div class="m-actions">
       ${o.src==='plan'?'<button class="btn danger btn-sm" data-unplan>Remove from week</button>':''}
       ${!o.done && (isNext || o.src==='plan' || (o.src==='week' && (k==='recurring'||k==='adhoc'))) ? '<button class="btn ghost btn-sm" data-skip>Skip to next week</button>' : ''}
-      ${k==='dated' && it.type==='One-Time' && it.freq==='Once' ? '<button class="btn danger btn-sm" data-delete>Delete</button>':''}
+      <button class="btn danger btn-sm" data-delete>Delete</button>
       <span class="spacer"></span>
       <button class="btn ghost" data-x>Close</button>
       ${editable?'<button class="btn" data-ok>Save</button>':''}
@@ -1436,8 +1436,7 @@ function monthItemModal(o){
     m.querySelector('[data-x]').onclick=closeModal;
     wireDone(m,id);
     const sk=m.querySelector('[data-skip]'); if(sk) sk.onclick=()=>{ closeModal(); skipTask(id, o.wk || mondayOf(o.proj||o.day||viewWs)); };
-    const del=m.querySelector('[data-delete]'); let armed=false;
-    if(del) del.onclick=()=>{ if(!armed){ armed=true; del.textContent='Tap again to delete'; return; } delete items[id]; closeModal(); render(); write('items/'+id,()=>db.doc('items/'+id).delete()).then(()=>toast('Deleted')); };
+    wireDelete(m,id);
     const un=m.querySelector('[data-unplan]'); if(un) un.onclick=()=>{ closeModal(); removeFromWeek(o.wk||mondayOf(o.day),id); toast('Removed from that week'); };
     const ok=m.querySelector('[data-ok]');
     if(ok) ok.onclick=()=>{
@@ -1802,6 +1801,11 @@ function skipTask(id, wk){
   else if(k==='adhoc') setPlanIn(next, id, null);
   toast('Skipped. '+it.name+' is now in the week of '+fmt(next)+'.');
 }
+function wireDelete(m,id){
+  const del=m.querySelector('[data-delete]'); if(!del) return; let armed=false;
+  del.onclick=()=>{ if(!armed){ armed=true; del.textContent=kind(items[id]||{})==='recurring'||kind(items[id]||{})==='routine'?'Tap again: deletes it for good':'Tap again to delete'; return; }
+    delete items[id]; closeModal(); render(); write('items/'+id,()=>db.doc('items/'+id).delete()).then(()=>toast('Deleted')); };
+}
 function taskModal(id){
   const r=weekList().find(x=>x.id===id); if(!r) return;
   const it=r.it, k=kind(it), cur=taskDay(r);
@@ -1815,6 +1819,7 @@ function taskModal(id){
     <div class="m-divider"></div>
     ${doneControl(r.done, cur||(k==='recurring'?it.due:null))}
     <div class="m-actions">
+      <button class="btn danger btn-sm" data-delete>Delete</button>
       ${!r.done && (k==='recurring'||k==='adhoc') ? '<button class="btn ghost btn-sm" data-skip>Skip to next week</button>' : ''}
       <span class="spacer"></span>
       <button class="btn ghost" data-x>Cancel</button><button class="btn" data-ok>Save</button>
@@ -1822,6 +1827,7 @@ function taskModal(id){
     m.querySelector('[data-x]').onclick=closeModal;
     wireDone(m,id);
     const sk=m.querySelector('[data-skip]'); if(sk) sk.onclick=()=>{ closeModal(); skipTask(id, ws); };
+    wireDelete(m,id);
     const ok=m.querySelector('[data-ok]');
     ok.onclick=()=>{
       const v=m.querySelector('#m-day').value, mv=m.querySelector('#m-min').value;
