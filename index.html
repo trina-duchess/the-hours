@@ -1734,7 +1734,23 @@ function orderDay(d, list){
   const pos=k=>{ const i=saved.indexOf(k); return i<0?9999:i; };
   const isEv=r=>!!(r.eventDay||r.src==='event');
   const base=[...list].sort((a,b)=>(isEv(a)?0:1)-(isEv(b)?0:1)||String(a.it.time||'99').localeCompare(String(b.it.time||'99'))||a.it.name.localeCompare(b.it.name));
-  return base.map((r,i)=>({r,i})).sort((x,y)=>{ const px=pos(rowKey(x.r)), py=pos(rowKey(y.r)); return (px===9999&&py===9999)?x.i-y.i:px-py; }).map(x=>x.r);
+  const tm=r=>String(r.it.time||'99');
+  // your saved arrangement first; anything new is placed after it
+  const out=base.filter(r=>pos(rowKey(r))<9999).sort((a,b)=>pos(rowKey(a))-pos(rowKey(b)));
+  base.filter(r=>pos(rowKey(r))===9999).forEach(r=>{
+    if(!isEv(r)){ out.push(r); return; }
+    // a new event goes in among the other events by its start time
+    let at=-1;
+    out.forEach((x,i)=>{ if(isEv(x) && tm(x)<=tm(r)) at=i; });
+    if(at<0){ const firstLater=out.findIndex(x=>isEv(x)); at=(firstLater<0?(out.findIndex(x=>!isEv(x))<0?out.length:0):firstLater)-1; }
+    out.splice(at+1,0,r);
+  });
+  // events always read in time order: they keep their spots, but fill them earliest first
+  const slots=[], evs=[];
+  out.forEach((r,i)=>{ if(isEv(r)){ slots.push(i); evs.push(r); } });
+  evs.sort((a,b)=>tm(a).localeCompare(tm(b))||a.it.name.localeCompare(b.it.name));
+  slots.forEach((s,j)=>out[s]=evs[j]);
+  return out;
 }
 function saveDayOrder(d, keys){
   const w='w'+mondayOf(d), doc=cloneWeek(weekDocFor(w)); doc.order=doc.order||{}; doc.order[d]=keys; saveWeekId(w,doc);
