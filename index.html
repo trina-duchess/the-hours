@@ -1575,7 +1575,8 @@ function dayModal(day){
     const nb=m.querySelector('[data-new]'); if(nb) nb.onclick=()=>addEventModal(day);
   });
 }
-function addEventModal(day){
+function addEventModal(day, pre){
+  pre=pre||{};
   const cats=[...new Set([...KNOWN,...Object.values(items).map(i=>i.cat)].filter(Boolean))].sort();
   const whenever=Object.entries(items).filter(([id,it])=>kind(it)==='adhoc' && !it.archived).sort((a,b)=>a[1].name.localeCompare(b[1].name));
   const dueThatWeek=d=>{ if(!d) return []; const wk=mondayOf(d);
@@ -1585,10 +1586,10 @@ function addEventModal(day){
     <div class="seg" role="tablist"><button class="seg-b on" data-seg="new">New event</button><button class="seg-b" data-seg="newtask">New task</button><button class="seg-b" data-seg="task">One of my tasks</button></div>
     <div data-pane="new">
       <div class="form-grid">
-        <div class="field wide"><label class="field-label" for="ae-name">What</label><input id="ae-name" placeholder="Dinner with Austin"></div>
+        <div class="field wide"><label class="field-label" for="ae-name">What</label><input id="ae-name" placeholder="Dinner with Austin" value="${esc(pre.name||'')}"></div>
         <div class="field"><label class="field-label" for="ae-date">Date</label><input id="ae-date" type="date" value="${day&&day>=todayISO()?day:todayISO()}" min="${todayISO()}"></div>
-        <div class="field"><label class="field-label" for="ae-time-h">Time (optional)</label>${timePicker('ae-time',null)}</div>
-        <div class="field"><label class="field-label" for="ae-min">How long</label><select id="ae-min">${lengthOptions(null)}</select></div>
+        <div class="field"><label class="field-label" for="ae-time-h">Time (optional)</label>${timePicker('ae-time',pre.time||null)}</div>
+        <div class="field"><label class="field-label" for="ae-min">How long</label><select id="ae-min">${lengthOptions(pre.min||null)}</select></div>
         <div class="field"><label class="field-label" for="ae-rep">Repeats</label><select id="ae-rep">${Object.entries(REPEAT_LABEL).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div>
         <div class="field"><label class="field-label" for="ae-cat">Category</label><select id="ae-cat"><option value="" selected disabled hidden>Choose…</option>${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select></div>
         <div class="field"><label class="field-label" for="ae-goal">Life goal</label><select id="ae-goal">${goalOptions(null)}</select></div>
@@ -2069,12 +2070,25 @@ document.addEventListener('click',e=>{
   const ed=e.target.closest('[data-edit]'); if(ed) editModal(ed.dataset.edit);
 });
 
+/* ---------- add an event sent from another page ----------
+   A link like ?add=event&name=Silent%20Sky&date=2026-10-30&time=19:30&min=120 opens the
+   New event form filled in; you still pick the category and life goal, then Add event. */
+let prefillDone=false;
+function openPrefilledEvent(){
+  if(prefillDone) return; prefillDone=true;
+  const q=new URLSearchParams(location.search); if(q.get('add')!=='event') return;
+  try{ history.replaceState(null,'',location.pathname+location.hash); }catch(e){}
+  const date=/^\d{4}-\d{2}-\d{2}$/.test(q.get('date')||'')?q.get('date'):null;
+  const time=/^\d{2}:\d{2}$/.test(q.get('time')||'')?q.get('time'):null;
+  const min=Number(q.get('min'))||null;
+  addEventModal(date&&date>=todayISO()?date:null,{name:(q.get('name')||'').slice(0,120),time,min});
+}
 /* ---------- boot ---------- */
 render();
 (async()=>{
   try{ db = window.claude ? await window.claude.use('db') : null; }catch(e){}
   if(!db){ loaded=true; document.getElementById('m-grid').innerHTML='<div class="empty" style="grid-column:1/-1;padding:20px;">Couldn’t open your data.</div>'; return; }
-  db.collection('items').limit(1000).onSnapshot(s=>{ const n={}; s.docs.forEach(d=>n[d.id]=d.data()); items=n; loaded=true; render(); },
+  db.collection('items').limit(1000).onSnapshot(s=>{ const n={}; s.docs.forEach(d=>n[d.id]=d.data()); items=n; loaded=true; render(); openPrefilledEvent(); },
     ()=>{ loaded=true; render(); toast('Couldn’t load tasks.'); });
   db.collection('goals').onSnapshot(s=>{ const n={}; s.docs.forEach(d=>n[d.id]=d.data()); goals=n; render(); });
   db.doc('settings/main').onSnapshot(s=>{ if(s.exists) settings={...DEFAULT_SETTINGS,...s.data()}; render(); });
