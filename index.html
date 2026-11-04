@@ -713,7 +713,9 @@ function kind(it){
   return 'recurring';
 }
 /* dates an event falls on between a and b. repeat: none | weekly | monthly (same nth weekday) | yearly */
-function eventDates(it,a,b){
+/* the dates an event falls on, minus any single dates you cancelled */
+function eventDates(it,a,b){ const skip=it.skipDates||[]; return eventDatesAll(it,a,b).filter(d=>!skip.includes(d)); }
+function eventDatesAll(it,a,b){
   const out=[]; if(!it.date) return out;
   const r=it.repeat||'none';
   if(r==='none'){ if(it.date>=a && it.date<=b) out.push(it.date); return out; }
@@ -1469,8 +1471,14 @@ function eventModal(id, day){
       <div class="field"><label class="field-label" for="ev-goal">Life goal</label><select id="ev-goal">${goalOptions(it.goal)}</select></div>
     </div>
     ${day && day<=todayISO() ? `<div class="m-divider"></div><div class="done-row"><span class="muted" style="flex:1;">${(it.doneDates||[]).includes(day)?'Done on '+fmt(day)+'.':'Did it happen?'}</span><button class="btn ${(it.doneDates||[]).includes(day)?'ghost':'good'} btn-sm" data-evdone>${(it.doneDates||[]).includes(day)?'Undo done':'Mark done'}</button></div>` : ''}
-    <div class="m-actions"><button class="btn danger btn-sm" data-del>Delete${rep!=='none'?' all':''}</button><span class="spacer"></span>
-      <button class="btn ghost" data-x>Cancel</button><button class="btn" data-ok>Save</button></div>`, m=>{
+    ${rep!=='none' && (it.skipDates||[]).some(d=>d>=ws) ? `<div class="m-divider"></div><div class="muted" style="margin-bottom:6px;">Cancelled dates</div><div class="day-pick">${(it.skipDates||[]).filter(d=>d>=ws).map(d=>`<button class="dp" data-unskip="${d}" title="Put this one back">${fmt(d)} · restore</button>`).join('')}</div>` : ''}
+    <div class="m-actions"><button class="btn danger btn-sm" data-del>Delete${rep!=='none'?' all':''}</button>${rep!=='none'&&day?`<button class="btn ghost btn-sm" data-skipone>Cancel just ${fmt(day)}</button>`:''}<span class="spacer"></span>
+      <button class="btn ghost" data-x>Close</button><button class="btn" data-ok>Save</button></div>`, m=>{
+    const so=m.querySelector('[data-skipone]');
+    if(so) so.onclick=()=>{ const cur=items[id], sk=new Set(cur.skipDates||[]); sk.add(day);
+      closeModal(); saveItem(id,{...cur, skipDates:[...sk].sort(), doneDates:(cur.doneDates||[]).filter(d=>d!==day)}); toast('Cancelled '+fmt(day)+' only'); };
+    m.querySelectorAll('[data-unskip]').forEach(b=>b.onclick=()=>{ const d=b.dataset.unskip, cur=items[id];
+      closeModal(); saveItem(id,{...cur, skipDates:(cur.skipDates||[]).filter(x=>x!==d)}); toast(fmt(d)+' is back on'); });
     const v=s=>m.querySelector(s).value;
     m.querySelector('[data-x]').onclick=closeModal;
     const ed=m.querySelector('[data-evdone]');
