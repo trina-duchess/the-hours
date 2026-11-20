@@ -484,6 +484,106 @@
   @media (prefers-reduced-motion: reduce) { * { transition:none !important; } }
 </style>
 
+<style>
+  .timer-bar { position:sticky; top:0; z-index:40; display:flex; align-items:center; gap:12px; background:var(--ink); color:var(--bg); border-radius:10px; padding:8px 10px 8px 14px; margin:-6px 0 16px; box-shadow:var(--shadow-lift); }
+  .timer-bar .tb-name { flex:1; min-width:0; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+  .timer-bar .tb-clock { font-family:var(--f-mono); font-variant-numeric:tabular-nums; font-size:15px; }
+  .timer-bar.over .tb-clock { color:#f2b59f; }
+  .tb-dot { width:9px; height:9px; border-radius:50%; background:#e3896a; animation:tbp 1.6s ease-in-out infinite; flex-shrink:0; }
+  @keyframes tbp { 50% { opacity:.25; } }
+  .tm-stop { background:var(--over); } .tm-stop:hover { background:#953f26; }
+  .tm { background:var(--bg-warm); border:1px solid var(--line); border-radius:10px; padding:12px 14px; margin:0 0 14px; }
+  .tm-row { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .tm-go { min-width:132px; } .tm-go[disabled] { opacity:.45; cursor:not-allowed; }
+  .tm-guess { font-size:14px; color:var(--ink-soft); margin-top:2px; }
+  .tm-clock { font-family:var(--f-mono); font-size:28px; font-variant-numeric:tabular-nums; color:var(--accent-dark); }
+  .tm-stats { font-size:13px; color:var(--ink-soft); margin:12px 0 6px; }
+  .tm-stats b { color:var(--good); font-size:15px; }
+  .tm-spark { display:block; margin-top:4px; }
+  .tm-legend { display:flex; gap:14px; flex-wrap:wrap; font-size:11px; color:var(--ink-faded); margin-top:4px; }
+  .tm-legend span { display:flex; align-items:center; gap:5px; }
+  .tm-legend i { width:10px; height:10px; border-radius:2px; display:inline-block; }
+  .tm-legend i.dash { height:0; width:14px; border-top:2px dashed var(--over); border-radius:0; }
+  .tm-result { text-align:center; padding:10px 0 4px; }
+  .tm-big { font-family:var(--f-display); font-size:52px; line-height:1; color:var(--good); letter-spacing:-0.02em; margin-bottom:8px; }
+  .tm-head { display:flex; align-items:center; gap:16px; margin:10px 0 14px; flex-wrap:wrap; }
+  .tm-head .tm-big { margin:0; }
+  .tm-head .muted { flex:1 1 220px; }
+  .gv-list { display:flex; flex-direction:column; }
+  .gv-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(80px,1.1fr) 112px; gap:12px; align-items:center; background:none; border:none; border-bottom:1px solid var(--line); padding:9px 2px; text-align:left; cursor:pointer; color:var(--ink); font:inherit; }
+  .gv-row:hover { background:var(--bg); }
+  .gv-name { font-weight:500; overflow-wrap:anywhere; } .gv-name small { display:block; font-weight:400; font-size:11px; color:var(--ink-faded); }
+  .gv-bars { display:flex; flex-direction:column; gap:3px; }
+  .gv-b { height:7px; border-radius:3px; display:block; min-width:2px; }
+  .gv-b.guess { background:var(--over-soft); border:1px solid var(--over); }
+  .gv-b.act { background:var(--good); }
+  .gv-val { font-family:var(--f-mono); font-size:12px; color:var(--ink-faded); white-space:nowrap; text-align:right; } .gv-val b { color:var(--good); }
+  .tm-log { margin-top:12px; max-height:40vh; overflow-y:auto; }
+  .tm-log-row { display:flex; align-items:center; gap:10px; justify-content:space-between; padding:6px 0; border-bottom:1px dotted var(--line); font-size:13px; }
+  .tm-log-row span:first-child { color:var(--ink-faded); font-family:var(--f-mono); font-size:12px; }
+  .tm-log-row span:nth-child(2) { flex:1; text-align:right; }
+  .chip.timing { box-shadow:0 0 0 2px var(--over); }
+  .chip.timing .chip-name::before { content:'⏱ '; }
+  @media (max-width:520px){ .gv-row { grid-template-columns:minmax(0,1fr) 104px; } .gv-bars { grid-column:1 / -1; order:3; } .tm-row { flex-wrap:wrap; } .tm-go, .tm-stop { width:100%; } }
+</style>
+<style>
+  /* week view: desktop keeps the 7 columns; these bits only show on a phone */
+  .day-sum, .day-chev, .day-today-tag, .tray-toggle .chev, .rt-chev, .cv-list-label { display:none; }
+  button.day-fixed { background:none; border:none; padding:6px 10px 0; text-align:left; font:inherit; font-size:11px; color:var(--ink-faded); cursor:default; width:100%; }
+  .tray-toggle { background:none; border:none; padding:0; color:var(--ink); cursor:default; text-align:left; width:100%; }
+  @media (max-width:900px){
+    #panel-calendar:not([hidden]) { display:flex; flex-direction:column; }
+    #panel-calendar > .m-head { order:0; }
+    #cv-grid { order:1; }
+    #cv-tray-card { order:2; margin-top:16px; }
+    #cv-free-card { order:3; }
+    #panel-calendar > .cv-legend { order:4; }
+    #w-title { font-size:20px; }
+
+    /* the list of days, like the Bears schedule: one rounded list, tap a day to open it */
+    .cv-grid { gap:0; }
+    .cv-grid .day-col { border:1px solid var(--line); border-top:none; border-radius:0; box-shadow:none; border-left:4px solid transparent; min-height:0; }
+    .cv-grid .day-col.first-row { border-top:1px solid var(--line); border-radius:12px 12px 0 0; }
+    .cv-grid .day-col.last-row { border-radius:0 0 12px 12px; }
+    .cv-grid .day-col.first-row.last-row { border-radius:12px; }
+    .day-head { display:grid; grid-template-columns:44px minmax(0,1fr) auto 18px; align-items:center; gap:2px 10px; padding:12px 12px 12px 10px; cursor:pointer; border-bottom:none; }
+    .day-head .day-name { grid-column:1; grid-row:1; font-size:11px; color:var(--accent-dark); font-weight:500; }
+    .day-head .day-date { grid-column:2; grid-row:1; font-size:17px; }
+    .day-head .day-sum { display:block; grid-column:2; grid-row:2; font-size:12px; color:var(--ink-faded); }
+    .day-head .day-meter { grid-column:3; grid-row:1; width:64px; margin:0; }
+    .day-head .day-free { grid-column:3; grid-row:2; margin:0; text-align:right; }
+    .day-head .day-chev { display:block; grid-column:4; grid-row:1 / span 2; color:var(--ink-faded); transition:transform .15s; text-align:center; }
+    .day-col:not(.collapsed) .day-chev { transform:rotate(180deg); }
+    .day-col:not(.collapsed) { background:var(--bg); border-left-color:var(--accent); }
+    .day-col:not(.collapsed) .day-head { border-bottom:1px solid var(--line); }
+    .day-col.collapsed .day-fixed, .day-col.collapsed .day-rt, .day-col.collapsed .day-body, .day-col.collapsed .add-day { display:none; }
+    .day-col.past.collapsed .day-date { color:var(--ink-faded); }
+
+    /* routines fold into one line; tap it to see them */
+    button.day-fixed { cursor:pointer; padding:10px 12px 2px; font-size:12px; }
+    .rt-chev { display:inline; color:var(--accent-dark); }
+    .day-col:not(.rt-open) .day-rt { display:none; }
+
+    /* today is its own card at the top */
+    .cv-grid .day-col.today { order:-2; border:1px solid var(--accent); border-radius:12px; margin:0 0 6px; box-shadow:0 0 0 3px var(--accent-soft); background:var(--paper); }
+    .cv-list-label { display:block; order:-1; font-family:var(--f-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-faded); padding:14px 2px 6px; }
+    .day-col.today .day-head { cursor:default; grid-template-columns:44px minmax(0,1fr) auto; }
+    .day-col.today .day-chev { display:none; }
+    .day-today-tag { display:block; grid-column:1 / -1; font-family:var(--f-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--paper); background:var(--accent); border-radius:10px; padding:2px 8px; justify-self:start; margin-bottom:4px; }
+    .day-col.today .day-date { font-size:20px; }
+    .day-col.today .day-today-tag { grid-row:1; }
+    .day-col.today .day-head .day-name, .day-col.today .day-head .day-date, .day-col.today .day-head .day-meter { grid-row:2; }
+    .day-col.today .day-head .day-sum, .day-col.today .day-head .day-free { grid-row:3; }
+    .day-col.today .day-body .chip { padding:9px 11px; font-size:14px; }
+
+    /* "Not on a day yet" folds up too */
+    .tray-toggle { display:flex; align-items:baseline; gap:10px; cursor:pointer; }
+    .tray-toggle .chev { display:inline; margin-left:auto; color:var(--ink-faded); transition:transform .15s; }
+    #cv-tray-card.tray-open .tray-toggle .chev { transform:rotate(180deg); }
+    #cv-tray-card:not(.tray-open) > .muted, #cv-tray-card:not(.tray-open) > .cv-tray { display:none; }
+    #cv-tray-card:not(.tray-open) { padding-top:14px; padding-bottom:14px; }
+  }
+</style>
 <div class="app wide">
   <div class="header">
     <div class="brand-block">
@@ -527,7 +627,7 @@
       </div>
       <h2 class="m-title" id="w-title">—</h2>
     </div>
-    <div class="card">
+    <div class="card" id="cv-free-card">
       <div class="free">
         <div>
           <div class="free-label" id="free-label">Free this week</div>
@@ -540,7 +640,7 @@
     </div>
 
     <div class="card" id="cv-tray-card">
-      <div class="card-h">Not on a day yet <span class="eyebrow" id="cv-tray-count"></span></div>
+      <button class="card-h tray-toggle" id="tray-toggle" type="button" aria-expanded="false">Not on a day yet <span class="eyebrow" id="cv-tray-count"></span><span class="chev">▾</span></button>
       <div class="muted" style="margin:2px 0 10px;">Tap a task to give it a day, or drag it onto a day.</div>
       <div class="cv-tray" id="cv-tray" data-drop=""></div>
     </div>
@@ -560,6 +660,8 @@
       <div class="yp-track"><div id="yp-bar" class="yp-fill"></div></div>
       <div class="metric-sub" id="yp-status" style="margin-top:8px;">—</div>
     </div>
+
+    <div class="card" id="guess-card"></div>
 
     <div class="metrics" id="year-metrics"></div>
 
@@ -816,7 +918,9 @@ function calMin(){ return visibleEvents().reduce((s,e)=>s+e.min,0); }
 /* ---------- render ---------- */
 let tab='calendar';
 function render(){
+  renderTimerBar();
   document.getElementById('week-label').textContent = fmt(viewWs)+' – '+fmt(viewWe());
+  if(tab==='year') renderGuessCard();
   if(tab==='month') renderMonth(); else if(tab==='calendar') { renderFree(); renderCalView(); } else if(tab==='routines') renderRoutines(); else if(tab==='goals') renderGoals(); else if(tab==='year') renderYear(); else if(tab==='events') renderEvents(); else renderTasks();
 }
 /* rows for whichever week the Week tab is showing */
@@ -856,6 +960,7 @@ function renderTasks(){
     if(k==='dated') info+=` · ${fmt(it.date)}`;
     if(k==='event') info=`${esc(repeatText(it))}${it.repeat&&it.repeat!=='none'?'':' · '+fmt(it.date)}${it.time?' · '+timeLabel(it.time):''}${it.min?' · '+minLabel(it.min):''}`;
     if(it.archived) info+=' · finished';
+    { const st=timeStats(it); if(st) info+=` · really ${minLabel(Math.round(st.avg))} on average`; }
     return `<div class="t-row"><div class="t-main"><div class="t-name">${esc(it.name)}</div><div class="t-meta">${info}</div></div>
       <button class="icon-btn" data-edit="${esc(id)}" aria-label="Edit ${esc(it.name)}">✎</button></div>`;
   };
@@ -1422,6 +1527,7 @@ function monthItemModal(o){
   openModal(`<h3>${esc(it.name)}</h3>
     <div class="muted" style="margin-bottom:14px;">${fromISO(o.day).toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric'})} · ${esc(it.cat)} · ${esc(freqText(it))} · ${esc(gname)}</div>
     ${note?`<div class="muted" style="margin-bottom:12px;">${note}</div>`:''}
+    ${canDone?timerBlock(id,null,o.done):''}
     ${editable?`<div class="form-grid">
       <div class="field"><label class="field-label" for="mo-date">${isNext?'Due on':'Date'}</label><input id="mo-date" type="date" value="${o.day}"></div>
       <div class="field"><label class="field-label" for="mo-min">Minutes</label><input id="mo-min" type="number" min="0" step="5" value="${it.min??''}"></div>
@@ -1436,7 +1542,7 @@ function monthItemModal(o){
       ${editable?'<button class="btn" data-ok>Save</button>':''}
     </div>`, m=>{
     m.querySelector('[data-x]').onclick=closeModal;
-    wireDone(m,id);
+    wireDone(m,id); wireTimer(m,id);
     const sk=m.querySelector('[data-skip]'); if(sk) sk.onclick=()=>{ closeModal(); skipTask(id, o.wk || mondayOf(o.proj||o.day||viewWs)); };
     wireDelete(m,id);
     const un=m.querySelector('[data-unplan]'); if(un) un.onclick=()=>{ closeModal(); removeFromWeek(o.wk||mondayOf(o.day),id); toast('Removed from that week'); };
@@ -1520,7 +1626,7 @@ function markSession(wk, sid, done){
 }
 function sessChip(o){
   const it=o.it;
-  return `<button class="chip ${o.done?'done':''}" data-key="s:${esc(o.sid)}" data-sess="${esc(o.sid)}" data-swk="${o.wk}" title="Drag to another day, or tap for options">
+  return `<button class="chip ${o.done?'done':''} ${it.timer&&it.timer.sid===o.sid?'timing':''}" data-key="s:${esc(o.sid)}" data-sess="${esc(o.sid)}" data-swk="${o.wk}" title="Drag to another day, or tap for options">
     <span class="chip-name"><span class="dot" style="background:${catColor(it.cat)}"></span>${esc(it.name)}</span>
     <span class="chip-meta">${esc([minLabel(it.min),'whenever'].filter(Boolean).join(' · '))}</span></button>`;
 }
@@ -1529,6 +1635,7 @@ function sessionModal(wk, sid){
   const t=todayISO(), days=weekDates(wk);
   openModal(`<h3>${esc(it.name)}</h3>
     <div class="muted" style="margin-bottom:14px;">${esc(it.cat)} · whenever · week of ${fmt(wk)}${it.lastDone?' · last done '+fmt(it.lastDone):''}</div>
+    ${timerBlock(s.id,{wk,sid},s.done)}
     <div class="form-grid">
       <div class="field"><label class="field-label" for="ss-day">Day</label><select id="ss-day"><option value="">Not on a day yet</option>${days.map((d,i)=>`<option value="${d}" ${d===s.day?'selected':''}>${DAYN[i]} · ${fmt(d)}</option>`).join('')}</select></div>
       <div class="field"><label class="field-label" for="ss-min">How long</label><select id="ss-min">${lengthOptions(it.min)}</select></div>
@@ -1542,6 +1649,7 @@ function sessionModal(wk, sid){
       <button class="btn ghost" data-x>Close</button><button class="btn" data-ok>Save</button></div>`, m=>{
     m.querySelector('[data-x]').onclick=closeModal;
     const dn=m.querySelector('[data-sdone]'); if(dn) dn.onclick=()=>{ closeModal(); markSession(wk,sid,!s.done); };
+    wireTimer(m,s.id,{wk,sid});
     m.querySelector('[data-sdel]').onclick=()=>{ closeModal(); updSession(wk,sid,null); toast('Removed from that week'); };
     m.querySelectorAll('[data-again]').forEach(b=>b.onclick=()=>{ addSession(wk,s.id,b.dataset.again); b.classList.add('on'); b.textContent='✓ '+b.textContent; toast('Added to '+dow(b.dataset.again)); });
     m.querySelector('[data-ok]').onclick=()=>{
@@ -1693,6 +1801,8 @@ function taskDay(r){
   const d=weekDoc.plan[r.id];
   return (d && d>=ws && d<=we) ? d : null;
 }
+const openDays=new Set(), rtOpen=new Set(); let trayOpen=false;
+const isPhone=()=>window.matchMedia('(max-width:900px)').matches;
 function renderCalView(){
   const dates=weekDates(viewWs), t=todayISO(), here=viewWs===ws;
   const rows=viewRows();
@@ -1702,26 +1812,32 @@ function renderCalView(){
   document.getElementById('w-title').textContent = (here?'This week · ':'')+fmt(viewWs)+' – '+fmt(viewWe())+', '+viewWe().slice(0,4);
   document.getElementById('cv-cap').textContent=`Bars fill against ${h1(cap)} waking hours a day, counting work, routines and tasks.`+(here?'':' Tasks due that week wait in “Not on a day yet” until you place them.');
   const card=document.getElementById('cv-tray-card'); card.hidden=false;
+  card.classList.toggle('tray-open',trayOpen); document.getElementById('tray-toggle').setAttribute('aria-expanded',trayOpen);
   {
     const tray=rows.filter(r=>!r.done && !r.day);
     document.getElementById('cv-tray-count').textContent = tray.length ? '· '+tray.length : '';
     document.getElementById('cv-tray').innerHTML = !loaded ? '<div class="empty">Loading…</div>' :
       tray.length ? tray.map(r=>here?taskChip(r):otherChip(r)).join('') : '<div class="empty">'+(here?'Everything on this week’s list has a day.':'Nothing targeted for this week yet.')+'</div>';
   }
-  document.getElementById('cv-grid').innerHTML=dates.map((d,i)=>{
+  const rest=dates.filter(d=>d!==t), firstRow=rest[0], lastRow=rest[rest.length-1];
+  document.getElementById('cv-grid').innerHTML=(dates.includes(t)?'<div class="cv-list-label">The rest of the week · tap a day to open it</div>':'')+dates.map((d,i)=>{
     const tasks=orderDay(d, rows.filter(r=>r.day===d));
     const used=work[i]+rt[i]+tasks.reduce((s,r)=>s+(r.it.min||0),0);
     const over=used>cap;
     const fixed=[work[i]?`Work ${h1(work[i])} h`:'', rt[i]?`Routines ${minLabel(rt[i])}`:''].filter(Boolean).join(' · ');
     const rts=routinesOn(d,i);
-    return `<div class="day-col ${d===t?'today':''}" data-drop="${d}">
-      <div class="day-head">
+    const isToday=d===t, open=isToday||openDays.has(d), nDone=tasks.filter(r=>r.done).length;
+    const sum=tasks.length?`${tasks.length} item${tasks.length>1?'s':''}${nDone?` · ${nDone} done`:''}`:'Nothing planned';
+    return `<div class="day-col ${isToday?'today':''} ${d===firstRow?'first-row':''} ${d===lastRow?'last-row':''} ${d<t?'past':''} ${open?'':'collapsed'} ${rtOpen.has(d)?'rt-open':''}" data-drop="${d}">
+      <div class="day-head" data-daytoggle="${d}" role="button" aria-expanded="${open}">
+        ${isToday?'<div class="day-today-tag">Today</div>':''}
         <div class="day-name">${DAYN[i]}</div>
         <div class="day-date">${fmt(d)}</div>
+        <div class="day-sum">${sum}</div><span class="day-chev" aria-hidden="true">▾</span>
         <div class="day-meter"><div class="day-meter-fill ${over?'over':''}" style="width:${Math.min(100,used/cap*100)}%"></div></div>
         <div class="day-free ${over?'over':''}">${over?h1(used-cap)+' h over':h1(cap-used)+' h free'}</div>
       </div>
-      ${fixed?`<div class="day-fixed">${fixed}</div>`:''}
+      ${fixed?`<button type="button" class="day-fixed" data-rttoggle="${d}">${fixed}${rts.length?` <span class="rt-chev">· ${rtOpen.has(d)?'hide':'show'}</span>`:''}</button>`:''}
       ${rts.length?`<div class="day-rt">${rts.map(([id,it])=>`<button class="chip rt" data-edit="${esc(id)}" title="Daily routine · tap to edit"><span class="chip-name">${esc(it.name)}</span>${it.min?`<span class="chip-meta">${esc(minLabel(it.min))}</span>`:''}</button>`).join('')}</div>`:''}
       <div class="day-body">${tasks.map(r=>here?taskChip(r):otherChip(r)).join('')}</div>
       ${d>=t?`<button class="add-day" data-addday="${d}">+ Add</button>`:''}
@@ -1776,7 +1892,7 @@ function otherChip(o){
   if(o.sid) return sessChip(o);
   const i=monthReg.push(o)-1, it=o.it, k=kind(it);
   const meta=[minLabel(it.min), o.late&&!o.done?'overdue':'', o.src==='repeat'&&!o.day?'due this week':'', k==='dated'?'dated':''].filter(Boolean).join(' · ');
-  return `<button class="chip ${o.late&&!o.done?'late':''} ${o.done?'done':''} " data-key="t:${esc(o.id)}" data-otask="${i}" title="Drag to a day, or tap for options">
+  return `<button class="chip ${o.late&&!o.done?'late':''} ${o.done?'done':''} ${it.timer&&!it.timer.sid&&!o.done?'timing':''}" data-key="t:${esc(o.id)}" data-otask="${i}" title="Drag to a day, or tap for options">
     <span class="chip-name"><span class="dot" style="background:${catColor(it.cat)}"></span>${esc(it.name)}</span>
     ${meta?`<span class="chip-meta">${esc(meta)}</span>`:''}</button>`;
 }
@@ -1799,7 +1915,7 @@ function taskChip(r){
   if(r.sid) return sessChip(r);
   const it=r.it, k=kind(it);
   const meta=[minLabel(it.min), r.late&&!r.done?'overdue':'', k==='dated'?'dated':''].filter(Boolean).join(' · ');
-  return `<button class="chip ${r.late&&!r.done?'late':''} ${r.done?'done':''}" data-key="t:${esc(r.id)}" data-task="${esc(r.id)}" title="Drag to another day, or tap to move">
+  return `<button class="chip ${r.late&&!r.done?'late':''} ${r.done?'done':''} ${it.timer&&!it.timer.sid?'timing':''}" data-key="t:${esc(r.id)}" data-task="${esc(r.id)}" title="Drag to another day, or tap to move">
     <span class="chip-name"><span class="dot" style="background:${catColor(it.cat)}"></span>${esc(it.name)}</span>
     ${meta?`<span class="chip-meta">${esc(meta)}</span>`:''}</button>`;
 }
@@ -1831,11 +1947,144 @@ function wireDelete(m,id){
   del.onclick=()=>{ if(!armed){ armed=true; del.textContent=kind(items[id]||{})==='recurring'||kind(items[id]||{})==='routine'?'Tap again: deletes it for good':'Tap again to delete'; return; }
     delete items[id]; closeModal(); render(); write('items/'+id,()=>db.doc('items/'+id).delete()).then(()=>toast('Deleted')); };
 }
+/* ---------- timer: guess vs. actual ----------
+   item.timer  = {start, wk?, sid?}   while it's running (saved, so it shows on every device)
+   item.timeOpen = {min, d}           time banked from a stop where it wasn't finished yet
+   item.times  = [{d, min, est}]      one entry per finished occurrence: actual minutes and what you guessed */
+function runningTimer(){ const e=Object.entries(items).find(([id,it])=>it.timer&&it.timer.start); return e?{id:e[0],it:e[1]}:null; }
+function elapsedMs(it){ return it&&it.timer?Math.max(0,Date.now()-it.timer.start):0; }
+function clock(ms){ const s=Math.floor(ms/1000), h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60; return (h?h+':'+pad(m):m)+':'+pad(x); }
+function timeStats(it){
+  const t=(it.times||[]).filter(x=>x.min>0); if(!t.length) return null;
+  const avg=t.reduce((s,x)=>s+x.min,0)/t.length;
+  const recent=t.length>=4?t.slice(-3).reduce((s,x)=>s+x.min,0)/3:null;
+  return {n:t.length, avg, recent, last:t[t.length-1], list:t};
+}
+function guessWord(guess, actual){
+  if(!guess||!actual) return '';
+  const r=guess/actual;
+  if(r>=1.15) return r>=1.9?`you guess about ${(Math.round(r*2)/2).toString().replace(/\.0$/,'')}× too long`:`you guess about ${Math.round((r-1)*100)}% too long`;
+  if(r<=0.87) return `it takes about ${Math.round((1/r-1)*100)}% longer than you guess`;
+  return 'your guess is about right';
+}
+function sparkTimes(it){
+  const st=timeStats(it); if(!st) return '';
+  const L=st.list.slice(-12), W=260, H=64, bw=Math.min(18,(W-8)/L.length-4), max=Math.max(it.min||0,...L.map(x=>x.min))*1.1||1;
+  const y=v=>H-4-(v/max)*(H-10);
+  const bars=L.map((x,i)=>{ const X=4+i*((W-8)/L.length)+2; return `<rect x="${X.toFixed(1)}" y="${y(x.min).toFixed(1)}" width="${bw.toFixed(1)}" height="${(H-4-y(x.min)).toFixed(1)}" rx="2" fill="var(--good)"><title>${fmt(x.d)}: ${minLabel(x.min)}</title></rect>`; }).join('');
+  const g=it.min?`<line x1="0" x2="${W}" y1="${y(it.min).toFixed(1)}" y2="${y(it.min).toFixed(1)}" stroke="var(--over)" stroke-width="1.5" stroke-dasharray="4 3"/>`:'';
+  return `<svg class="tm-spark" viewBox="0 0 ${W} ${H}" width="100%" height="${H}" role="img" aria-label="Your last ${L.length} times against your guess">${bars}${g}</svg>
+    <div class="tm-legend"><span><i style="background:var(--good)"></i>each time you did it</span>${it.min?'<span><i class="dash"></i>your guess</span>':''}</div>`;
+}
+/* the timer + history block that sits in a task's popup. ctx = {wk,sid} for a repeatable activity */
+function timerBlock(id, ctx, statsOnly){
+  const it=items[id]; if(!it) return '';
+  if(statsOnly && !timeStats(it)) return '';
+  const run=runningTimer(), mine=run&&run.id===id, st=timeStats(it), open=it.timeOpen&&it.timeOpen.min;
+  let h='<div class="tm">';
+  if(statsOnly) h+=`<div class="field-label">Your times</div>`;
+  else if(mine) h+=`<div class="tm-row"><div><div class="field-label">Timer running</div><div class="tm-clock" data-tmclock>${clock(elapsedMs(it)+(open||0)*60000)}</div></div><button class="btn tm-stop" data-tmstop>■ Stop</button></div>`;
+  else h+=`<div class="tm-row"><div><div class="field-label">How long will it really take?</div><div class="tm-guess">${it.min?'You guessed '+minLabel(it.min):'No guess yet'}${open?` · ${minLabel(open)} done so far`:''}</div></div><button class="btn tm-go" data-tmstart ${run?'disabled title="Another timer is running"':''}>▶ ${open?'Keep going':'Start timer'}</button></div>`;
+  if(run && !mine && !statsOnly) h+=`<div class="muted" style="margin-top:6px;">${esc(run.it.name)} is being timed. Stop it first.</div>`;
+  if(st){
+    h+=`<div class="tm-stats"><b>${minLabel(Math.round(st.avg))}</b> average over ${st.n} time${st.n>1?'s':''}${it.min?' · '+guessWord(it.min,st.avg):''}${st.recent!=null?` · last 3 average ${minLabel(Math.round(st.recent))}`:''}</div>${sparkTimes(it)}`;
+    const avgR=Math.max(5,Math.round(st.avg/5)*5);
+    h+=`<button class="btn ghost btn-sm" data-tmhist style="margin:8px 8px 0 0;">See every time</button>`;
+    if(st.n>=2 && it.min && Math.abs(avgR-it.min)>=5) h+=`<button class="btn ghost btn-sm" data-tmuse="${avgR}" style="margin-top:8px;">Use ${minLabel(avgR)} as my guess</button>`;
+  }
+  return h+'</div>';
+}
+let tmTick=null;
+function wireTimer(m, id, ctx){
+  const go=m.querySelector('[data-tmstart]'); if(go) go.onclick=()=>{ closeModal(); startTimer(id, ctx); };
+  const sp=m.querySelector('[data-tmstop]'); if(sp) sp.onclick=()=>{ closeModal(); stopModal(id); };
+  const hs=m.querySelector('[data-tmhist]'); if(hs) hs.onclick=()=>{ closeModal(); historyModal(id); };
+  const us=m.querySelector('[data-tmuse]'); if(us) us.onclick=()=>{ const v=Number(us.dataset.tmuse); closeModal(); saveItem(id,{...items[id],min:v}); toast('Your guess is now '+minLabel(v)); };
+}
+function startTimer(id, ctx){
+  const run=runningTimer(); if(run && run.id!==id){ toast(run.it.name+' is still being timed'); return; }
+  saveItem(id,{...items[id], timer:{start:Date.now(), ...(ctx&&ctx.sid?{wk:ctx.wk,sid:ctx.sid}:{})}});
+  toast('Timer started. Tap Stop at the top when you’re done.');
+}
+function stopModal(id){
+  const it=items[id]; if(!it||!it.timer) return;
+  const now=Date.now(), runMin=(now-it.timer.start)/60000, earlier=(it.timeOpen&&it.timeOpen.min)||0;
+  const total=Math.max(1,Math.round(runMin+earlier));
+  const cmp=it.min?(total<it.min?`<b>${minLabel(it.min-total)} less</b> than you guessed`:total>it.min?`<b>${minLabel(total-it.min)} more</b> than you guessed`:'<b>exactly</b> what you guessed'):'';
+  openModal(`<h3>${esc(it.name)}</h3>
+    <div class="tm-result"><div class="tm-big">${minLabel(total)}</div>
+      <div class="muted">${it.min?`You guessed ${minLabel(it.min)}. That’s ${cmp}.`:'You hadn’t set a guess for this one.'}${earlier?` Includes ${minLabel(Math.round(earlier))} from earlier.`:''}</div></div>
+    <div class="m-actions" style="justify-content:stretch;">
+      <button class="btn danger btn-sm" data-tmdiscard>Discard</button><span class="spacer"></span>
+      <button class="btn ghost" data-tmpart>Not finished</button>
+      <button class="btn" data-tmdone>Done · record it</button></div>`, m=>{
+    m.querySelector('[data-tmdiscard]').onclick=()=>{ const c={...items[id]}; delete c.timer; closeModal(); saveItem(id,c); toast('Timer discarded'); };
+    m.querySelector('[data-tmpart]').onclick=()=>{ const c={...items[id]}; delete c.timer; c.timeOpen={min:Math.round((runMin+earlier)*10)/10, d:todayISO()}; closeModal(); saveItem(id,c); toast('Saved '+minLabel(total)+' so far. Start it again to keep going.'); };
+    m.querySelector('[data-tmdone]').onclick=()=>{ closeModal(); finishTimed(id,total); };
+  });
+}
+function finishTimed(id, total){
+  const it=items[id], t=todayISO(), ctx=it.timer||{};
+  const c={...it, times:[...(it.times||[]), {d:t, min:total, est:it.min??null}]}; delete c.timer; delete c.timeOpen;
+  saveItem(id,c);
+  const st=timeStats(c);
+  // mark the occurrence done
+  if(ctx.sid){ const s=(weekDocFor('w'+ctx.wk).sessions||{})[ctx.sid]; if(s&&!s.done) markSession(ctx.wk,ctx.sid,true); }
+  else { const k=kind(c), r=weekList().find(x=>x.id===id&&!x.sid);
+    if(k!=='routine' && k!=='event' && !(r&&r.done) && !(k!=='recurring'&&c.lastDone===t)) toggleDone(id,true,t); }
+  setTimeout(()=>toast(`Recorded ${minLabel(total)}${st.n>1?' · average now '+minLabel(Math.round(st.avg)):''}`),2600);
+}
+function renderTimerBar(){
+  let bar=document.getElementById('timer-bar');
+  if(!bar){ bar=document.createElement('div'); bar.id='timer-bar'; bar.className='timer-bar'; bar.hidden=true;
+    bar.innerHTML='<span class="tb-dot"></span><span class="tb-name"></span><span class="tb-clock"></span><button class="btn btn-sm tm-stop" data-tbstop>■ Stop</button>';
+    document.querySelector('.header').after(bar);
+    bar.querySelector('[data-tbstop]').onclick=()=>{ const r=runningTimer(); if(r) stopModal(r.id); };
+    bar.querySelector('.tb-name').onclick=()=>{ const r=runningTimer(); if(r) stopModal(r.id); }; }
+  const r=runningTimer();
+  if(!r){ bar.hidden=true; clearInterval(tmTick); tmTick=null; return; }
+  bar.hidden=false; bar.querySelector('.tb-name').textContent=r.it.name;
+  const upd=()=>{ const x=runningTimer(); if(!x){ renderTimerBar(); return; }
+    const ms=elapsedMs(x.it)+((x.it.timeOpen&&x.it.timeOpen.min)||0)*60000;
+    bar.querySelector('.tb-clock').textContent=clock(ms)+(x.it.min?' / '+minLabel(x.it.min):'');
+    bar.classList.toggle('over', !!x.it.min && ms>x.it.min*60000);
+    const mc=document.querySelector('[data-tmclock]'); if(mc) mc.textContent=clock(ms); };
+  upd(); if(!tmTick) tmTick=setInterval(upd,1000);
+}
+/* Guess vs. actual, across everything you've timed */
+function renderGuessCard(){
+  const el=document.getElementById('guess-card'); if(!el) return;
+  const rows=Object.entries(items).map(([id,it])=>({id,it,st:timeStats(it)})).filter(x=>x.st);
+  if(!rows.length){ el.innerHTML=`<div class="card-h">Guess vs. actual</div><div class="muted" style="margin-top:4px;">Open a task and tap <b>▶ Start timer</b> when you begin. Tap <b>Stop</b> when you’re done, and the real time lands here next to your guess.</div>`; return; }
+  let g=0,a=0; rows.forEach(x=>x.st.list.forEach(t=>{ if(t.est){ g+=t.est; a+=t.min; } }));
+  const big=a?guessWord(g,a):'';
+  rows.sort((x,y)=>((y.it.min||0)/y.st.avg)-((x.it.min||0)/x.st.avg));
+  el.innerHTML=`<div class="card-h">Guess vs. actual <span class="eyebrow">${rows.length} timed</span></div>
+    ${a?`<div class="tm-head"><div class="tm-big" style="font-size:40px;">${(g/a).toFixed(1)}×</div><div class="muted">Over ${rows.reduce((s,x)=>s+x.st.n,0)} timed runs you guessed ${h1(g)} h and they took ${h1(a)} h, so ${big}.</div></div>`:''}
+    <div class="gv-list">${rows.map(x=>{ const w=Math.max(x.it.min||0,x.st.avg), sc=v=>Math.round(v/w*100);
+      return `<button class="gv-row" data-gv="${esc(x.id)}"><span class="gv-name">${esc(x.it.name)}<small>${x.st.n} time${x.st.n>1?'s':''}</small></span>
+        <span class="gv-bars"><span class="gv-b guess" style="width:${sc(x.it.min||0)}%"></span><span class="gv-b act" style="width:${sc(x.st.avg)}%"></span></span>
+        <span class="gv-val">${x.it.min?minLabel(x.it.min):'—'} → <b>${minLabel(Math.round(x.st.avg))}</b></span></button>`; }).join('')}</div>
+    <div class="tm-legend" style="margin-top:8px;"><span><i style="background:var(--over-soft);border:1px solid var(--over)"></i>your guess</span><span><i style="background:var(--good)"></i>average actual</span></div>`;
+  el.querySelectorAll('[data-gv]').forEach(b=>b.onclick=()=>historyModal(b.dataset.gv));
+}
+function historyModal(id){
+  const it=items[id], st=timeStats(it); if(!st) return;
+  openModal(`<h3>${esc(it.name)}</h3><div class="muted" style="margin-bottom:6px;">${esc(it.cat)} · guess ${it.min?minLabel(it.min):'not set'}</div>
+    ${timerBlock(id,null,true).replace(/<button class="btn ghost btn-sm" data-tmhist[^>]*>See every time<\/button>/,'')}
+    <div class="tm-log">${st.list.slice().reverse().map((t,i)=>`<div class="tm-log-row"><span>${fromISO(t.d).toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}</span><span>${t.est?'guessed '+minLabel(t.est)+' · ':''}<b>${minLabel(t.min)}</b></span><button class="icon-btn" data-tmrm="${st.list.length-1-i}" aria-label="Remove this time">✕</button></div>`).join('')}</div>
+    <div class="m-actions"><span class="spacer"></span><button class="btn ghost" data-x>Close</button></div>`, m=>{
+    m.querySelector('[data-x]').onclick=closeModal; wireTimer(m,id);
+    m.querySelectorAll('[data-tmrm]').forEach(b=>{ let armed=false; b.onclick=()=>{ if(!armed){ armed=true; b.textContent='?'; b.title='Tap again to remove'; return; }
+      const c={...items[id]}; c.times=(c.times||[]).filter((_,j)=>j!==Number(b.dataset.tmrm)); closeModal(); saveItem(id,c); toast('Removed'); if(c.times.length) historyModal(id); }; });
+  });
+}
 function taskModal(id){
   const r=weekList().find(x=>x.id===id); if(!r) return;
   const it=r.it, k=kind(it), cur=taskDay(r);
   openModal(`<h3>${esc(it.name)}</h3>
     <div class="muted" style="margin-bottom:14px;">${esc(it.cat)}${it.min?' · '+minLabel(it.min):''}${k==='dated'?' · fixed date':''}</div>
+    ${timerBlock(id,null,r.done)}
     <div class="form-grid">
       <div class="field"><label class="field-label" for="m-day">Day</label><select id="m-day">${k==='dated'?'':'<option value="">Not on a day yet</option>'}${dayOptions(cur)}</select></div>
       <div class="field"><label class="field-label" for="m-min">Minutes</label><input id="m-min" type="number" min="0" step="5" value="${it.min??''}"></div>
@@ -1852,7 +2101,7 @@ function taskModal(id){
     m.querySelector('[data-x]').onclick=closeModal;
     wireDone(m,id);
     const sk=m.querySelector('[data-skip]'); if(sk) sk.onclick=()=>{ closeModal(); skipTask(id, ws); };
-    wireDelete(m,id);
+    wireDelete(m,id); wireTimer(m,id);
     const ok=m.querySelector('[data-ok]');
     ok.onclick=()=>{
       const v=m.querySelector('#m-day').value, mv=m.querySelector('#m-min').value;
@@ -1945,6 +2194,11 @@ document.addEventListener('click',e=>{
   if(suppressClick){ e.preventDefault(); e.stopPropagation(); return; }
   const tk=e.target.closest('[data-task]'); if(tk){ taskModal(tk.dataset.task); return; }
   const ad=e.target.closest('[data-addday]'); if(ad){ addEventModal(ad.dataset.addday); return; }
+  if(isPhone()){
+    const dt=e.target.closest('[data-daytoggle]'); if(dt){ const d=dt.dataset.daytoggle; if(d===todayISO()) return; openDays.has(d)?openDays.delete(d):openDays.add(d); renderCalView(); return; }
+    const rtg=e.target.closest('[data-rttoggle]'); if(rtg){ const d=rtg.dataset.rttoggle; rtOpen.has(d)?rtOpen.delete(d):rtOpen.add(d); renderCalView(); return; }
+    if(e.target.closest('#tray-toggle')){ trayOpen=!trayOpen; renderCalView(); return; }
+  }
   const ot=e.target.closest('[data-otask]'); if(ot){ const o=monthReg[+ot.dataset.otask]; if(o) monthItemModal(o); }
 });
 
