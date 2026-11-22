@@ -584,6 +584,21 @@
     #cv-tray-card:not(.tray-open) { padding-top:14px; padding-bottom:14px; }
   }
 </style>
+<style>
+  /* phone: the popup's buttons sit at the top and stay there, so the keyboard never covers them */
+  @media (max-width:900px), (pointer:coarse){
+    .modal { display:flex; flex-direction:column; padding-top:0; }
+    .modal > .m-actions { order:-1; position:sticky; top:0; z-index:5; background:var(--paper); margin:0 -22px 12px; padding:12px 22px 10px; border-bottom:1px solid var(--line); }
+    .modal > h3 { margin-top:2px; }
+    .modal > .m-actions { gap:6px; flex-wrap:nowrap; }
+    .modal > .m-actions .btn { min-height:36px; padding:0 10px; font-size:13px; white-space:nowrap; }
+    .modal > .m-actions .spacer { min-width:0; }
+    .long-lbl { display:none; }
+    .modal > .m-actions { flex-wrap:wrap; }
+    .overlay { align-items:flex-start; padding-top:max(12px, env(safe-area-inset-top)); }
+    .modal { max-height:calc(100dvh - 24px); }
+  }
+</style>
 <div class="app wide">
   <div class="header">
     <div class="brand-block">
@@ -1008,9 +1023,13 @@ function toggleAdd(id){
   saveWeek();
 }
 
-function openModal(html,mount){ const o=document.getElementById('overlay'),m=document.getElementById('modal'); m.innerHTML=html; o.hidden=false; mount(m); m.querySelector('input')?.focus(); }
+function openModal(html,mount){ const o=document.getElementById('overlay'),m=document.getElementById('modal'); m.innerHTML=html; o.hidden=false; mount(m); m.scrollTop=0;
+  // on a phone, don't jump into a field (that pops the keyboard up over the popup); on a computer, keep it
+  if(!window.matchMedia('(pointer:coarse)').matches) m.querySelector('input')?.focus({preventScroll:true}); }
 function closeModal(){ document.getElementById('overlay').hidden=true; }
-document.getElementById('overlay').addEventListener('click',e=>{ if(e.target.id==='overlay') closeModal(); });
+let downOnBackdrop=false;
+document.getElementById('overlay').addEventListener('pointerdown',e=>{ downOnBackdrop=e.target.id==='overlay'; });
+document.getElementById('overlay').addEventListener('click',e=>{ if(e.target.id==='overlay' && downOnBackdrop) closeModal(); downOnBackdrop=false; });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeModal(); });
 
 /* ---------- year ---------- */
@@ -1535,7 +1554,7 @@ function monthItemModal(o){
     ${canDone?'<div class="m-divider"></div>'+doneControl(o.done, o.day):''}
     <div class="m-actions">
       ${o.src==='plan'?'<button class="btn danger btn-sm" data-unplan>Remove from week</button>':''}
-      ${!o.done && (isNext || o.src==='plan' || (o.src==='week' && (k==='recurring'||k==='adhoc'))) ? '<button class="btn ghost btn-sm" data-skip>Skip to next week</button>' : ''}
+      ${!o.done && (isNext || o.src==='plan' || (o.src==='week' && (k==='recurring'||k==='adhoc'))) ? '<button class="btn ghost btn-sm" data-skip>Skip<span class="long-lbl"> to next</span> week</button>' : ''}
       <button class="btn danger btn-sm" data-delete>Delete</button>
       <span class="spacer"></span>
       <button class="btn ghost" data-x>Close</button>
@@ -2094,7 +2113,7 @@ function taskModal(id){
     ${doneControl(r.done, cur||(k==='recurring'?it.due:null))}
     <div class="m-actions">
       <button class="btn danger btn-sm" data-delete>Delete</button>
-      ${!r.done && (k==='recurring'||k==='adhoc') ? '<button class="btn ghost btn-sm" data-skip>Skip to next week</button>' : ''}
+      ${!r.done && (k==='recurring'||k==='adhoc') ? '<button class="btn ghost btn-sm" data-skip>Skip<span class="long-lbl"> to next</span> week</button>' : ''}
       <span class="spacer"></span>
       <button class="btn ghost" data-x>Cancel</button><button class="btn" data-ok>Save</button>
     </div>`, m=>{
